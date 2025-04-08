@@ -23,4 +23,3 @@ export async function GET() {
   // Return mock data
   return NextResponse.json(subjects)
 }
-
