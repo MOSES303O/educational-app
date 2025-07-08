@@ -1,649 +1,211 @@
-// Base API URL - this would point to your Django backend in production
-const API_BASE_URL = ""
+// frontend/lib/api.ts
+import axios from 'axios';
+import { University } from "@/types";
+import { Course, SubjectGrades, UserData } from '@/types';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+// Create axios instance
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
 
+// Add token to requests if available
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Token ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// API functions
 export async function fetchSubjects() {
   try {
-    const response = await fetch(`/api/subjects`)
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    const data = await response.json()
-    return data
+    const response = await apiClient.get('/courses/subjects/');
+    return response.data.map((subject: any) => ({
+      value: subject.code,  // or subject.id
+      label: subject.name,
+    }))
   } catch (error) {
-    console.error("Failed to fetch subjects:", error)
-    throw error
+    console.error('Failed to fetch subjects:', error);
+    return [
+      { value: "mathematics", label: "Mathematics" },
+      { value: "kiswahili", label: "Kiswahili" },
+      { value: "english", label: "English" },
+      { value: "biology", label: "Biology" },
+      { value: "chemistry", label: "Chemistry" },
+      { value: "physics", label: "Physics" },
+      { value: "history", label: "History" },
+      { value: "geography", label: "Geography" },
+      { value: "business_studies", label: "Business Studies" },
+      { value: "computer_studies", label: "Computer Studies" },
+      { value: "agriculture", label: "Agriculture" },
+    ]
+  }
+}
+//fetch courses
+export async function fetchCourses(params = {}) {
+  try {
+    const response = await apiClient.get('/courses/courses/', { params });
+    return response.data.results ?? response.data; // failsafe
+  } catch (error) {
+    console.error('Failed to fetch courses:', error);
+    throw error;
+  }
+}
+// Fetch universities
+export async function fetchUniversities(params = {}){
+  try {
+    const response = await apiClient.get('/universities/universities/', { params });
+    return response.data.results ?? response.data; // Returns the list of universities
+  } catch (error) {
+    console.error('Failed to fetch universities:', error);
+    throw error;
   }
 }
 
-export async function matchCourses(subjectGrades, totalPoints) {
+export async function fetchCourseById(id: string | number) {
   try {
-    const response = await fetch(`/api/match-courses`, {
+    const response = await apiClient.get(`/courses/courses/${id}/`);
+    console.log("Course API Response:", response.data); // Debug
+    return response.data.results ?? response.data; // Ensure this handles the response correctly
+  } catch (error) {
+    console.error(`Failed to fetch course with id ${id}:`, error);
+    throw error;
+  }
+}
+// Match university campus with course
+export async function matchUniversityCampus(courseId: string | number): Promise<string> {
+  try {
+    const course = await fetchCourseById(courseId);
+    const universities = await fetchUniversities();
+
+    const matchedUniversity = universities.find((university: University) =>
+      university.code === course.university_code || university.name === course.university_name
+    );
+
+    return matchedUniversity?.campus || "Not specified";
+  } catch (error) {
+    console.error(`Failed to match university campus for course ID ${courseId}:`, error);
+    return "Not specified";
+  }
+}
+export async function matchCourses(subjectGrades: SubjectGrades, totalPoints: number) {
+  try {
+    const response = await apiClient.post('/match-courses/', { subjectGrades, totalPoints });
+    return response.data.results ?? response.data;
+  } catch (error) {
+    console.error('Failed to match courses:', error);
+    throw error;
+  }
+}
+
+export async function login(username : string, password: string) {
+  try {
+    const response = await apiClient.post('/login/', { username, password });
+    return response.data.results ?? response.data;
+  } catch (error) {
+    console.error('Login failed:', error);
+    throw error;
+  }
+}
+// Fetch all selected courses by the user
+export async function fetchSelectedCourses(): Promise<Course[]> {
+  try {
+    const response = await apiClient.get('/user/selected-courses/');
+    const apiData = response.data;
+
+    if (apiData.success && Array.isArray(apiData.data)) {
+      // Extract the `course` objects from the response
+      return apiData.data.map((item: { course: Course }) => item.course);
+    } else {
+      throw new Error("Unexpected API response structure");
+    }
+  } catch (error: unknown) {
+    console.error("Failed to fetch selected courses:", error);
+    throw error; // Rethrow the error for further handling
+  }
+
+}
+// post a selected course into the database
+export async function insertSelectedCourse(courseId: string | number): Promise<Course> {
+  try {
+    const response = await apiClient.post('/user/selected-courses/', { courseId });
+    return response.data.results ?? response.data; // Return the inserted course data
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      console.error('Failed to insert selected course:', error.message);
+    } else {
+      console.error('An unknown error occurred while inserting selected course:', error);
+    }
+    throw error; // Rethrow the error for further handling
+  }
+}
+export async function register(userData:UserData) {
+  try {
+    const response = await apiClient.post('/register/', userData);
+    return response.data.results ?? response.data;
+  } catch (error) {
+    console.error('Registration failed:', error);
+    throw error;
+  }
+}
+
+export async function refreshToken(refreshToken: string): Promise<{ access: string; refresh: string }> {
+  try {
+    //fixme: replace with your backend URL
+    const response = await fetch("https://your-backend-url.com/api/token/refresh/", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ subjectGrades, totalPoints }),
-    })
+      body: JSON.stringify({ refresh: refreshToken }),
+    });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      throw new Error("Failed to refresh token");
     }
 
-    return await response.json()
+    const data = await response.json();
+
+    // Ensure the response contains the required tokens
+    if (!data.access || !data.refresh) {
+      throw new Error("Invalid token response from server");
+    }
+
+    return {
+      access: data.access,
+      refresh: data.refresh,
+    };
   } catch (error) {
-    console.error("Failed to match courses:", error)
-    throw error
+    console.error("Error refreshing token:", error);
+    throw error; // Re-throw the error to handle it in the calling code
   }
 }
 
-export async function fetchCourses(params = {}) {
+export async function processPayment(userId: number | string) {
   try {
-    // Create mock data for immediate return to avoid API errors
-    const mockData = [
-      {
-        id: "CS001",
-        code: "BSC-CS-001",
-        title: "Bachelor of Computer Science",
-        university: "University of Nairobi",
-        description:
-          "A comprehensive program covering programming, algorithms, data structures, and software engineering.",
-        points: 32,
-      },
-      {
-        id: "BA001",
-        code: "BBA-001",
-        title: "Bachelor of Business Administration",
-        university: "Strathmore University",
-        description: "Develop skills in management, marketing, finance, and entrepreneurship.",
-        points: 28,
-      },
-      {
-        id: "MD001",
-        code: "MBChB-001",
-        title: "Bachelor of Medicine and Surgery",
-        university: "Kenyatta University",
-        description: "Train to become a medical doctor with a focus on clinical practice and medical sciences.",
-        points: 42,
-      },
-      {
-        id: "ED001",
-        code: "BEd-ARTS-001",
-        title: "Bachelor of Education (Arts)",
-        university: "Moi University",
-        description: "Prepare for a career in teaching with a focus on humanities and social sciences.",
-        points: 30,
-      },
-      {
-        id: "AG001",
-        code: "BSc-AGRI-001",
-        title: "Bachelor of Agriculture",
-        university: "Egerton University",
-        description: "Study crop production, animal husbandry, agricultural economics, and sustainable farming.",
-        points: 32,
-      },
-      {
-        id: "EN001",
-        code: "BEng-CIVIL-001",
-        title: "Bachelor of Engineering (Civil)",
-        university: "JKUAT",
-        description: "Learn to design, construct and maintain infrastructure like buildings, roads, and bridges.",
-        points: 38,
-      },
-    ]
-
-    // Filter mock data based on params if needed
-    let filteredData = [...mockData]
-
-    if (params.subject && Array.isArray(params.subject)) {
-      filteredData = filteredData.filter((course) =>
-        params.subject.some((subj) => course.subjects && course.subjects.includes(subj)),
-      )
-    }
-
-    if (params.min_points) {
-      const minPoints = Number.parseInt(params.min_points, 10)
-      if (!isNaN(minPoints)) {
-        filteredData = filteredData.filter((course) => course.points <= minPoints)
-      }
-    }
-
-    return filteredData
-
-    // The code below is commented out to avoid the 500 error
-    /*
-    const queryParams = new URLSearchParams()
-    for (const key in params) {
-      if (Array.isArray(params[key])) {
-        params[key].forEach((value) => {
-          queryParams.append(key, value)
-        })
-      } else {
-        queryParams.append(key, params[key])
-      }
-    }
-
-    const url = `/api/courses?${queryParams.toString()}`
-    const response = await fetch(url)
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-
-    const data = await response.json()
-    return data
-    */
+    const response = await apiClient.post('/process-payment/', { user_id: userId });
+    return response.data.results ?? response.data;
   } catch (error) {
-    console.error("Failed to fetch courses:", error)
-    // Return mock data if there's an error
-    return [
-      {
-        id: "CS001",
-        code: "BSC-CS-001",
-        title: "Bachelor of Computer Science",
-        university: "University of Nairobi",
-        description:
-          "A comprehensive program covering programming, algorithms, data structures, and software engineering.",
-        points: 32,
-      },
-      {
-        id: "BA001",
-        code: "BBA-001",
-        title: "Bachelor of Business Administration",
-        university: "Strathmore University",
-        description: "Develop skills in management, marketing, finance, and entrepreneurship.",
-        points: 28,
-      },
-      {
-        id: "MD001",
-        code: "MBChB-001",
-        title: "Bachelor of Medicine and Surgery",
-        university: "Kenyatta University",
-        description: "Train to become a medical doctor with a focus on clinical practice and medical sciences.",
-        points: 42,
-      },
-      {
-        id: "ED001",
-        code: "BEd-ARTS-001",
-        title: "Bachelor of Education (Arts)",
-        university: "Moi University",
-        description: "Prepare for a career in teaching with a focus on humanities and social sciences.",
-        points: 30,
-      },
-      {
-        id: "AG001",
-        code: "BSc-AGRI-001",
-        title: "Bachelor of Agriculture",
-        university: "Egerton University",
-        description: "Study crop production, animal husbandry, agricultural economics, and sustainable farming.",
-        points: 32,
-      },
-      {
-        id: "EN001",
-        code: "BEng-CIVIL-001",
-        title: "Bachelor of Engineering (Civil)",
-        university: "JKUAT",
-        description: "Learn to design, construct and maintain infrastructure like buildings, roads, and bridges.",
-        points: 38,
-      },
-    ]
+    console.error('Payment processing failed:', error);
+    throw error;
   }
 }
 
-export async function fetchCourseById(id) {
+export async function generatePDF(courses: Course[], userName = 'Student') {
   try {
-    // Return mock data directly to avoid API errors
-    const mockCourses = [
-      {
-        id: "CS001",
-        code: "BSC-CS-001",
-        title: "Bachelor of Computer Science",
-        university: "University of Nairobi",
-        description:
-          "A comprehensive program covering programming, algorithms, data structures, and software engineering.",
-        fullDescription: `The Bachelor of Computer Science program at the University of Nairobi is designed to provide students with a strong foundation in computer science principles and practices. 
-
-This four-year program covers essential areas including:
-
-- Programming fundamentals and advanced techniques
-- Data structures and algorithms
-- Database systems and management
-- Software engineering methodologies
-- Computer networks and security
-- Artificial intelligence and machine learning
-- Web and mobile application development
-
-Students will engage in practical projects, internships, and research opportunities to develop real-world skills that are highly sought after in the technology industry.
-
-Graduates of this program typically pursue careers as software developers, systems analysts, database administrators, network engineers, or continue to postgraduate studies in specialized areas of computer science.`,
-        subjects: ["Mathematics", "Computer Studies", "Physics"],
-        points: 32,
-        duration: "4 years",
-        startDate: "September 2024",
-        applicationDeadline: "June 30, 2024",
-        campuses: ["Main Campus", "Kisumu Campus"],
-        careers: [
-          "Software Developer",
-          "Systems Analyst",
-          "Database Administrator",
-          "Network Engineer",
-          "IT Consultant",
-          "Web Developer",
-        ],
-      },
-      {
-        id: "BA001",
-        code: "BBA-001",
-        title: "Bachelor of Business Administration",
-        university: "Strathmore University",
-        description: "Develop skills in management, marketing, finance, and entrepreneurship.",
-        fullDescription: `The Bachelor of Business Administration program at Strathmore University is a comprehensive business degree that prepares students for leadership roles in various business environments.
-
-This four-year program covers key business disciplines including:
-
-- Management principles and organizational behavior
-- Marketing strategies and consumer behavior
-- Financial accounting and management
-- Economics and business analytics
-- Entrepreneurship and innovation
-- Business ethics and corporate social responsibility
-- Strategic management and leadership
-
-The program incorporates case studies, industry projects, and internships to provide practical experience alongside theoretical knowledge.
-
-Graduates are equipped to pursue careers in corporate management, marketing, finance, consulting, or to start their own businesses.`,
-        subjects: ["Business Studies", "Mathematics", "English"],
-        points: 28,
-        duration: "4 years",
-        startDate: "September 2024",
-        applicationDeadline: "July 15, 2024",
-        campuses: ["Main Campus"],
-        careers: [
-          "Business Manager",
-          "Marketing Executive",
-          "Financial Analyst",
-          "Human Resources Manager",
-          "Management Consultant",
-          "Entrepreneur",
-        ],
-      },
-      {
-        id: "MD001",
-        code: "MBChB-001",
-        title: "Bachelor of Medicine and Surgery",
-        university: "Kenyatta University",
-        description: "Train to become a medical doctor with a focus on clinical practice and medical sciences.",
-        fullDescription: `The Bachelor of Medicine and Bachelor of Surgery (MBChB) program at Kenyatta University is designed to train competent medical practitioners equipped with the knowledge, skills, and attitudes necessary for the practice of medicine.
-
-This six-year program is structured to provide:
-
-- Strong foundation in basic medical sciences
-- Comprehensive clinical training in various medical specialties
-- Hands-on experience through hospital rotations and community health projects
-- Understanding of medical ethics and professional conduct
-- Research skills and evidence-based medical practice
-- Public health and preventive medicine knowledge
-
-The program follows a rigorous curriculum that meets international standards and prepares students for medical licensure examinations.
-
-Graduates can pursue careers in clinical practice, medical research, public health, or specialize in various fields of medicine through postgraduate training.`,
-        subjects: ["Biology", "Chemistry", "Mathematics"],
-        points: 42,
-        duration: "6 years",
-        startDate: "September 2024",
-        applicationDeadline: "May 31, 2024",
-        campuses: ["Main Campus"],
-        careers: [
-          "Medical Doctor",
-          "Surgeon",
-          "Medical Researcher",
-          "Public Health Specialist",
-          "Medical Administrator",
-          "Medical Educator",
-        ],
-      },
-      {
-        id: "ED001",
-        code: "BEd-ARTS-001",
-        title: "Bachelor of Education (Arts)",
-        university: "Moi University",
-        description: "Prepare for a career in teaching with a focus on humanities and social sciences.",
-        fullDescription: `The Bachelor of Education (Arts) program at Moi University is designed to prepare qualified teachers for secondary schools with a focus on humanities and social sciences subjects.
-
-This four-year program combines:
-
-- Educational theory and teaching methodologies
-- Curriculum development and assessment techniques
-- Educational psychology and learner development
-- Specialized subject content in two teaching subjects
-- Teaching practice in actual school settings
-- Educational technology and innovation
-- Educational management and leadership
-
-Students select two teaching subjects from options including English, Kiswahili, History, Geography, Religious Studies, and Business Studies.
-
-Graduates are certified to teach in secondary schools and can pursue careers in educational administration, curriculum development, or further specialization through postgraduate studies.`,
-        subjects: ["English", "Kiswahili", "History"],
-        points: 30,
-        duration: "4 years",
-        startDate: "September 2024",
-        applicationDeadline: "July 31, 2024",
-        campuses: ["Main Campus", "Eldoret Campus"],
-        careers: [
-          "Secondary School Teacher",
-          "Education Administrator",
-          "Curriculum Developer",
-          "Educational Consultant",
-          "Education Officer",
-          "Academic Counselor",
-        ],
-      },
-      {
-        id: "AG001",
-        code: "BSc-AGRI-001",
-        title: "Bachelor of Agriculture",
-        university: "Egerton University",
-        description: "Study crop production, animal husbandry, agricultural economics, and sustainable farming.",
-        fullDescription: `The Bachelor of Agriculture program at Egerton University provides comprehensive training in agricultural sciences and practices to prepare students for careers in the agricultural sector.
-
-This four-year program covers:
-
-- Crop science and production systems
-- Animal science and livestock management
-- Soil science and plant nutrition
-- Agricultural economics and farm management
-- Agricultural engineering and mechanization
-- Sustainable farming practices and environmental conservation
-- Agricultural extension and rural development
-
-The program includes practical field work, farm attachments, and research projects to develop hands-on skills in agricultural practices.
-
-Graduates can pursue careers in farm management, agricultural research, extension services, agribusiness, or agricultural policy development.`,
-        subjects: ["Biology", "Chemistry", "Agriculture"],
-        points: 32,
-        duration: "4 years",
-        startDate: "September 2024",
-        applicationDeadline: "July 15, 2024",
-        campuses: ["Main Campus", "Nakuru Campus"],
-        careers: [
-          "Farm Manager",
-          "Agricultural Extension Officer",
-          "Agricultural Researcher",
-          "Agribusiness Entrepreneur",
-          "Agricultural Policy Analyst",
-          "Agricultural Consultant",
-        ],
-      },
-      {
-        id: "EN001",
-        code: "BEng-CIVIL-001",
-        title: "Bachelor of Engineering (Civil)",
-        university: "JKUAT",
-        description: "Learn to design, construct and maintain infrastructure like buildings, roads, and bridges.",
-        fullDescription: `The Bachelor of Engineering in Civil Engineering program at JKUAT (Jomo Kenyatta University of Agriculture and Technology) prepares students to design, construct, and maintain the built environment and infrastructure.
-
-This five-year program provides training in:
-
-- Structural engineering and mechanics
-- Geotechnical engineering and soil mechanics
-- Transportation engineering and highway design
-- Water resources and environmental engineering
-- Construction management and project planning
-- Surveying and geospatial techniques
-- Engineering materials and construction technology
-
-The program includes laboratory work, field studies, design projects, and industrial attachments to develop practical engineering skills.
-
-Graduates are qualified to work as civil engineers in construction companies, consulting firms, government agencies, or to pursue specialized areas through postgraduate studies.`,
-        subjects: ["Mathematics", "Physics", "Chemistry"],
-        points: 38,
-        duration: "5 years",
-        startDate: "September 2024",
-        applicationDeadline: "June 30, 2024",
-        campuses: ["Main Campus"],
-        careers: [
-          "Civil Engineer",
-          "Structural Engineer",
-          "Transportation Engineer",
-          "Water Resources Engineer",
-          "Construction Manager",
-          "Engineering Consultant",
-        ],
-      },
-    ]
-
-    return mockCourses.find((course) => course.id === id)
-
-    // The code below is commented out to avoid API errors
-    /*
-    const response = await fetch(`/api/courses/${id}`)
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    const data = await response.json()
-    return data
-    */
+    const response = await apiClient.post('/generate-pdf/', { courses, userName }, {
+      responseType: 'blob',
+    });
+    return response.data.results ?? response.data;
   } catch (error) {
-    console.error(`Failed to fetch course with id ${id}:`, error)
-    // For demo purposes, return mock data if API fails
-    const mockCourses = [
-      {
-        id: "CS001",
-        code: "BSC-CS-001",
-        title: "Bachelor of Computer Science",
-        university: "University of Nairobi",
-        description:
-          "A comprehensive program covering programming, algorithms, data structures, and software engineering.",
-        fullDescription: `The Bachelor of Computer Science program at the University of Nairobi is designed to provide students with a strong foundation in computer science principles and practices. 
-
-This four-year program covers essential areas including:
-
-- Programming fundamentals and advanced techniques
-- Data structures and algorithms
-- Database systems and management
-- Software engineering methodologies
-- Computer networks and security
-- Artificial intelligence and machine learning
-- Web and mobile application development
-
-Students will engage in practical projects, internships, and research opportunities to develop real-world skills that are highly sought after in the technology industry.
-
-Graduates of this program typically pursue careers as software developers, systems analysts, database administrators, network engineers, or continue to postgraduate studies in specialized areas of computer science.`,
-        subjects: ["Mathematics", "Computer Studies", "Physics"],
-        points: 32,
-        duration: "4 years",
-        startDate: "September 2024",
-        applicationDeadline: "June 30, 2024",
-        campuses: ["Main Campus", "Kisumu Campus"],
-        careers: [
-          "Software Developer",
-          "Systems Analyst",
-          "Database Administrator",
-          "Network Engineer",
-          "IT Consultant",
-          "Web Developer",
-        ],
-      },
-      {
-        id: "BA001",
-        code: "BBA-001",
-        title: "Bachelor of Business Administration",
-        university: "Strathmore University",
-        description: "Develop skills in management, marketing, finance, and entrepreneurship.",
-        fullDescription: `The Bachelor of Business Administration program at Strathmore University is a comprehensive business degree that prepares students for leadership roles in various business environments.
-
-This four-year program covers key business disciplines including:
-
-- Management principles and organizational behavior
-- Marketing strategies and consumer behavior
-- Financial accounting and management
-- Economics and business analytics
-- Entrepreneurship and innovation
-- Business ethics and corporate social responsibility
-- Strategic management and leadership
-
-The program incorporates case studies, industry projects, and internships to provide practical experience alongside theoretical knowledge.
-
-Graduates are equipped to pursue careers in corporate management, marketing, finance, consulting, or to start their own businesses.`,
-        subjects: ["Business Studies", "Mathematics", "English"],
-        points: 28,
-        duration: "4 years",
-        startDate: "September 2024",
-        applicationDeadline: "July 15, 2024",
-        campuses: ["Main Campus"],
-        careers: [
-          "Business Manager",
-          "Marketing Executive",
-          "Financial Analyst",
-          "Human Resources Manager",
-          "Management Consultant",
-          "Entrepreneur",
-        ],
-      },
-      {
-        id: "MD001",
-        code: "MBChB-001",
-        title: "Bachelor of Medicine and Surgery",
-        university: "Kenyatta University",
-        description: "Train to become a medical doctor with a focus on clinical practice and medical sciences.",
-        fullDescription: `The Bachelor of Medicine and Bachelor of Surgery (MBChB) program at Kenyatta University is designed to train competent medical practitioners equipped with the knowledge, skills, and attitudes necessary for the practice of medicine.
-
-This six-year program is structured to provide:
-
-- Strong foundation in basic medical sciences
-- Comprehensive clinical training in various medical specialties
-- Hands-on experience through hospital rotations and community health projects
-- Understanding of medical ethics and professional conduct
-- Research skills and evidence-based medical practice
-- Public health and preventive medicine knowledge
-
-The program follows a rigorous curriculum that meets international standards and prepares students for medical licensure examinations.
-
-Graduates can pursue careers in clinical practice, medical research, public health, or specialize in various fields of medicine through postgraduate training.`,
-        subjects: ["Biology", "Chemistry", "Mathematics"],
-        points: 42,
-        duration: "6 years",
-        startDate: "September 2024",
-        applicationDeadline: "May 31, 2024",
-        campuses: ["Main Campus"],
-        careers: [
-          "Medical Doctor",
-          "Surgeon",
-          "Medical Researcher",
-          "Public Health Specialist",
-          "Medical Administrator",
-          "Medical Educator",
-        ],
-      },
-      {
-        id: "ED001",
-        code: "BEd-ARTS-001",
-        title: "Bachelor of Education (Arts)",
-        university: "Moi University",
-        description: "Prepare for a career in teaching with a focus on humanities and social sciences.",
-        fullDescription: `The Bachelor of Education (Arts) program at Moi University is designed to prepare qualified teachers for secondary schools with a focus on humanities and social sciences subjects.
-
-This four-year program combines:
-
-- Educational theory and teaching methodologies
-- Curriculum development and assessment techniques
-- Educational psychology and learner development
-- Specialized subject content in two teaching subjects
-- Teaching practice in actual school settings
-- Educational technology and innovation
-- Educational management and leadership
-
-Students select two teaching subjects from options including English, Kiswahili, History, Geography, Religious Studies, and Business Studies.
-
-Graduates are certified to teach in secondary schools and can pursue careers in educational administration, curriculum development, or further specialization through postgraduate studies.`,
-        subjects: ["English", "Kiswahili", "History"],
-        points: 30,
-        duration: "4 years",
-        startDate: "September 2024",
-        applicationDeadline: "July 31, 2024",
-        campuses: ["Main Campus", "Eldoret Campus"],
-        careers: [
-          "Secondary School Teacher",
-          "Education Administrator",
-          "Curriculum Developer",
-          "Educational Consultant",
-          "Education Officer",
-          "Academic Counselor",
-        ],
-      },
-      {
-        id: "AG001",
-        code: "BSc-AGRI-001",
-        title: "Bachelor of Agriculture",
-        university: "Egerton University",
-        description: "Study crop production, animal husbandry, agricultural economics, and sustainable farming.",
-        fullDescription: `The Bachelor of Agriculture program at Egerton University provides comprehensive training in agricultural sciences and practices to prepare students for careers in the agricultural sector.
-
-This four-year program covers:
-
-- Crop science and production systems
-- Animal science and livestock management
-- Soil science and plant nutrition
-- Agricultural economics and farm management
-- Agricultural engineering and mechanization
-- Sustainable farming practices and environmental conservation
-- Agricultural extension and rural development
-
-The program includes practical field work, farm attachments, and research projects to develop hands-on skills in agricultural practices.
-
-Graduates can pursue careers in farm management, agricultural research, extension services, agribusiness, or agricultural policy development.`,
-        subjects: ["Biology", "Chemistry", "Agriculture"],
-        points: 32,
-        duration: "4 years",
-        startDate: "September 2024",
-        applicationDeadline: "July 15, 2024",
-        campuses: ["Main Campus", "Nakuru Campus"],
-        careers: [
-          "Farm Manager",
-          "Agricultural Extension Officer",
-          "Agricultural Researcher",
-          "Agribusiness Entrepreneur",
-          "Agricultural Policy Analyst",
-          "Agricultural Consultant",
-        ],
-      },
-      {
-        id: "EN001",
-        code: "BEng-CIVIL-001",
-        title: "Bachelor of Engineering (Civil)",
-        university: "JKUAT",
-        description: "Learn to design, construct and maintain infrastructure like buildings, roads, and bridges.",
-        fullDescription: `The Bachelor of Engineering in Civil Engineering program at JKUAT (Jomo Kenyatta University of Agriculture and Technology) prepares students to design, construct, and maintain the built environment and infrastructure.
-
-This five-year program provides training in:
-
-- Structural engineering and mechanics
-- Geotechnical engineering and soil mechanics
-- Transportation engineering and highway design
-- Water resources and environmental engineering
-- Construction management and project planning
-- Surveying and geospatial techniques
-- Engineering materials and construction technology
-
-The program includes laboratory work, field studies, design projects, and industrial attachments to develop practical engineering skills.
-
-Graduates are qualified to work as civil engineers in construction companies, consulting firms, government agencies, or to pursue specialized areas through postgraduate studies.`,
-        subjects: ["Mathematics", "Physics", "Chemistry"],
-        points: 38,
-        duration: "5 years",
-        startDate: "September 2024",
-        applicationDeadline: "June 30, 2024",
-        campuses: ["Main Campus"],
-        careers: [
-          "Civil Engineer",
-          "Structural Engineer",
-          "Transportation Engineer",
-          "Water Resources Engineer",
-          "Construction Manager",
-          "Engineering Consultant",
-        ],
-      },
-    ]
-
-    return mockCourses.find((course) => course.id === id)
+    console.error('Failed to generate PDF:', error);
+    throw error;
   }
 }

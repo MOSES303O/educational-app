@@ -1,50 +1,66 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { GraduationCap, ArrowLeft, ChevronDown, ChevronRight, CheckCircle, XCircle, Check, Heart } from "lucide-react"
+import { ArrowLeft, ChevronDown, ChevronRight, CheckCircle, XCircle, Check, Heart, Search } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { ThemeToggle } from "@/components/theme-toggle"
 import { fetchCourses } from "@/lib/api"
 import { CoursesSkeleton } from "@/components/courses-skeleton"
 import { useSelectedCourses, type Course } from "@/lib/course-store"
-import { toast } from "@/components/ui/use-toast"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { useToast } from "@/hooks/use-toast"
 import { AuthenticationModal } from "@/components/authentication-modal"
+import { useAuth } from "@/lib/auth-context"
+import { Header } from "@/components/header"
+import { Footer } from "@/components/footer"
+import { Input } from "@/components/ui/input"
+
+const gradeMap: Record<string, number> = {
+  A: 12,
+  "A-": 11,
+  "B+": 10,
+  B: 9,
+  "B-": 8,
+  "C+": 7,
+  C: 6,
+  "C-": 5,
+  "D+": 4,
+  D: 3,
+  "D-": 2,
+  E: 1,
+}
 
 export default function CoursesPage() {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [coursesData, setCoursesData] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
   const router = useRouter()
-
+  const { user } = useAuth()
   const searchParams = useSearchParams()
-
-  // Get user's total points from URL params
-  const userPoints = Number.parseInt(searchParams.get("points") || "0", 10)
-
-  // Get subject filters and points from URL once
-  const subjectParams = searchParams.getAll("subjects")
-  const pointsParam = searchParams.get("points")
-
-  // Use our custom hook for selected courses
+  const { toast } = useToast()
   const { selectedCourses, toggleCourseSelection, isCourseSelected } = useSelectedCourses()
 
-  useEffect(() => {
-    // Check if user is authenticated and has paid
-    const userRecord = JSON.parse(localStorage.getItem("eduPathwayUser") || "{}")
+  // Get user's total points and grade from URL params
+  const userPoints = Number.parseInt(searchParams.get("points") || "0", 10)
+  const userGrade = searchParams.get("grade") || ""
 
-    if (userRecord && userRecord.id) {
-      if (!userRecord.hasPaid) {
-        // User exists but hasn't paid - show authentication modal
-        setShowAuthModal(true)
-        return
-      }
+  // Memoize subjectParams to stabilize the dependency
+  const subjectParams = useMemo(() => searchParams.getAll("subjects"), [searchParams])
+
+  useEffect(() => {
+    // Debugging: Log when useEffect runs
+    console.log("useEffect triggered with subjectParams:", subjectParams, "userPoints:", userPoints)
+
+    // Check if user is authenticated and has paid
+    if (user && !user.hasPaid) {
+      setShowAuthModal(true)
+      return
     }
 
     async function loadCourses() {
@@ -58,73 +74,81 @@ export default function CoursesPage() {
         })
 
         // Fetch courses from API
-        const params = {
-          ...(subjects.length > 0 && { subject: subjects }),
-          ...(userPoints > 0 && { min_points: userPoints.toString() }),
+        const params: Record<string, string | string[]> = {}
+        if (subjects.length > 0) {
+          params.subject = subjects
+        }
+        if (userPoints > 0) {
+          params.min_points = userPoints.toString()
         }
 
         const data = await fetchCourses(params)
-        // Ensure we're handling the data correctly whether it's an array or has a results property
-        setCoursesData(Array.isArray(data) ? data : data.results || [])
+
+        // Check if data is valid
+        if (!data || !Array.isArray(data)) {
+          throw new Error("Invalid data received from API")
+        }
+
+        setCoursesData(data)
       } catch (err) {
         console.error("Error loading courses:", err)
         setError("Failed to load courses. Please try again later.")
 
-        // For demo purposes, use mock data if API fails
-        const mockData = [
+        // Use fallback data
+        const fallbackData = [
           {
             id: "CS001",
             code: "BSC-CS-001",
-            title: "Bachelor of Computer Science",
-            university: "University of Nairobi",
-            points: 32,
-            description:
-              "A comprehensive program covering programming, algorithms, data structures, and software engineering.",
+            name: "Bachelor of Computer Science",
+            university_name: "University of Nairobi",
+            description: "IT all the way",
+            minimum_grade: "B",
+            tuition_fee_per_year: "50000.00",
+            application_fee: "1000.00",
+            average_rating: 4,
+            total_reviews: 10,
+            category: "technology",
+            duration_years: 4,
+            is_selected: false,
           },
           {
             id: "BA001",
             code: "BBA-001",
-            title: "Bachelor of Business Administration",
-            university: "Strathmore University",
-            points: 28,
-            description: "Develop skills in management, marketing, finance, and entrepreneurship.",
+            name: "Bachelor of Business Administration",
+            university_name: "Strathmore University",
+            description: "biashara ni biashara",
+            minimum_grade: "B-",
+            tuition_fee_per_year: "60000.00",
+            application_fee: "1500.00",
+            average_rating: 4,
+            total_reviews: 8,
+            category: "business",
+            duration_years: 4,
+            is_selected: false,
           },
           {
             id: "MD001",
             code: "MBChB-001",
-            title: "Bachelor of Medicine and Surgery",
-            university: "Kenyatta University",
-            points: 42,
-            description: "Train to become a medical doctor with a focus on clinical practice and medical sciences.",
-          },
-          {
-            id: "ED001",
-            code: "BEd-ARTS-001",
-            title: "Bachelor of Education (Arts)",
-            university: "Moi University",
-            points: 30,
-            description: "Prepare for a career in teaching with a focus on humanities and social sciences.",
-          },
-          {
-            id: "AG001",
-            code: "BSc-AGRI-001",
-            title: "Bachelor of Agriculture",
-            university: "Egerton University",
-            points: 32,
-            description: "Study crop production, animal husbandry, agricultural economics, and sustainable farming.",
-          },
-          {
-            id: "EN001",
-            code: "BEng-CIVIL-001",
-            title: "Bachelor of Engineering (Civil)",
-            university: "JKUAT",
-            points: 38,
-            description: "Learn to design, construct and maintain infrastructure like buildings, roads, and bridges.",
+            name: "Bachelor of Medicine and Surgery",
+            university_name: "Kenyatta University",
+            description: "medicine is the dawa",
+            minimum_grade: "A-",
+            tuition_fee_per_year: "70000.00",
+            application_fee: "2000.00",
+            average_rating: 5,
+            total_reviews: 12,
+            category: "medical",
+            duration_years: 6,
+            is_selected: false,
           },
         ]
-        setCoursesData(mockData)
+        const transformedData = fallbackData.map((course) => ({
+          ...course,
+          duration_years: course.duration_years.toString(),
+        }))
+
+        setCoursesData(transformedData)
       } finally {
-        // Add a slight delay to ensure smooth transition
         setTimeout(() => {
           setLoading(false)
         }, 500)
@@ -132,35 +156,56 @@ export default function CoursesPage() {
     }
 
     loadCourses()
-    // Use stable references to avoid infinite loops
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [subjectParams, userPoints, user])
 
-  const toggleRow = (id) => {
+  // Filter courses based on search term
+  const filteredCourses = useMemo(() => {
+    console.log("Filtering courses with searchTerm:", searchTerm)
+    return coursesData.filter((course) => {
+      const matchesSearch =
+        searchTerm === "" ||
+        course.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        course.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        course.university_name.toLowerCase().includes(searchTerm.toLowerCase())
+      return matchesSearch
+    })
+  }, [coursesData, searchTerm])
+
+  const toggleRow = (id: string) => {
     setExpandedRows((prev) => ({
       ...prev,
       [id]: !prev[id],
     }))
   }
 
-  const isQualified = (requiredPoints) => {
-    return userPoints >= requiredPoints
+  const isQualified = (minGrade: string): boolean => {
+    return gradeMap[userGrade] >= gradeMap[minGrade]
   }
 
-  const handleSelectCourse = (e, course) => {
+  const handleSelectCourse = (e: React.MouseEvent, course: Course) => {
     e.stopPropagation()
-    toggleCourseSelection(course)
+    try {
+      toggleCourseSelection(course)
 
-    if (!isCourseSelected(course.id)) {
+      if (!isCourseSelected(course.id)) {
+        toast({
+          title: "Course Selected",
+          description: `${course.name} has been added to your selected courses.`,
+          duration: 3000,
+        })
+      } else {
+        toast({
+          title: "Course Removed",
+          description: `${course.name} has been removed from your selected courses.`,
+          duration: 3000,
+        })
+      }
+    } catch (err) {
+      console.error("Error selecting course:", err)
       toast({
-        title: "Course Selected",
-        description: `${course.title} has been added to your selected courses.`,
-        duration: 3000,
-      })
-    } else {
-      toast({
-        title: "Course Removed",
-        description: `${course.title} has been removed from your selected courses.`,
+        title: "Error",
+        description: "Failed to update course selection. Please try again.",
+        variant: "destructive",
         duration: 3000,
       })
     }
@@ -168,79 +213,9 @@ export default function CoursesPage() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b bg-background">
-        <div className="container flex h-16 items-center justify-between py-4">
-          <div className="flex items-center gap-2">
-            <GraduationCap className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-xl font-bold">EduPathway</span>
-          </div>
-          <nav className="hidden md:flex items-center gap-6">
-            <Link
-              href="/"
-              className="text-sm font-medium hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              Home
-            </Link>
-            <Link
-              href="/about"
-              className="text-sm font-medium hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              About
-            </Link>
-            <Link
-              href="/courses"
-              className="text-sm font-medium text-emerald-600 dark:text-emerald-400 transition-colors"
-            >
-              Courses
-            </Link>
-            <Link
-              href="/contact"
-              className="text-sm font-medium hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              Contact
-            </Link>
-          </nav>
-          <div className="flex items-center gap-4">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="relative"
-                    onClick={() => router.push("/selected-courses")}
-                  >
-                    <Heart className="h-5 w-5 text-emerald-600" />
-                    {selectedCourses.length > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-emerald-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                        {selectedCourses.length}
-                      </span>
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>View Selected Courses</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <ThemeToggle />
-            <Link
-              href="/signup"
-              className="text-sm font-medium hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors hidden md:block"
-            >
-              Sign In
-            </Link>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-              asChild
-            >
-              <Link href="/signup">Get Started</Link>
-            </Button>
-          </div>
-        </div>
-      </header>
+      <Header />
       <main className="flex-1">
-        <section className="w-full py-12 md:py-24 lg:py-32 bg-gradient-to-b from-white to-gray-50 dark:from-gray-950 dark:to-gray-900">
+        <section className="w-full py-12 md:py-24 lg:py-32">
           <div className="container px-4 md:px-6">
             <div className="flex flex-col items-start gap-4 mb-8">
               <Button variant="outline" size="sm" asChild className="mb-2">
@@ -267,7 +242,16 @@ export default function CoursesPage() {
                   </Button>
                 </div>
               </div>
-
+              {/* Search */}
+              <div className="flex-1 relative w-full mb-6">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Search courses by name, ID, or university..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                />
+              </div>
               {userPoints > 0 && (
                 <div className="flex items-center mt-2">
                   <Badge variant="outline" className="text-sm py-1 px-3 border-emerald-200 dark:border-emerald-800">
@@ -280,8 +264,18 @@ export default function CoursesPage() {
             {loading ? (
               <CoursesSkeleton />
             ) : error ? (
-              <div className="flex justify-center items-center p-8 rounded-md border bg-red-50 text-red-500">
-                {error}
+              <div className="flex justify-center items-center p-8 rounded-md border bg-red-50 text-red-500 dark:bg-red-900/20 dark:text-red-300">
+                <p>{error}</p>
+                <Button variant="outline" className="ml-4" onClick={() => window.location.reload()}>
+                  Try Again
+                </Button>
+              </div>
+            ) : filteredCourses.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-8 rounded-md border bg-gray-50 dark:bg-gray-800">
+                <p className="text-gray-500 dark:text-gray-400 mb-4">No courses found matching your criteria.</p>
+                <Button asChild variant="outline">
+                  <Link href="/">Start a New Search</Link>
+                </Button>
               </div>
             ) : (
               <div className="rounded-md border">
@@ -299,10 +293,9 @@ export default function CoursesPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {coursesData.map((course) => (
-                      <>
+                    {filteredCourses.map((course) => (
+                      <React.Fragment key={course.id}>
                         <TableRow
-                          key={course.id}
                           className="cursor-pointer hover:bg-muted/50"
                           onClick={() => toggleRow(course.id)}
                         >
@@ -313,12 +306,12 @@ export default function CoursesPage() {
                               <ChevronRight className="h-4 w-4" />
                             )}
                           </TableCell>
-                          <TableCell className="font-medium">{course.id}</TableCell>
-                          <TableCell>{course.title}</TableCell>
-                          <TableCell>{course.university}</TableCell>
-                          <TableCell>{course.points}</TableCell>
+                          <TableCell className="font-medium">{course.code}</TableCell>
+                          <TableCell>{course.name}</TableCell>
+                          <TableCell>{course.university_name}</TableCell>
+                          <TableCell>{course.minimum_grade}</TableCell>
                           <TableCell>
-                            {isQualified(course.points) ? (
+                            {isQualified(course.minimum_grade) ? (
                               <div className="flex items-center">
                                 <CheckCircle className="h-5 w-5 text-green-500 mr-1" />
                                 <span className="text-green-500">Qualified</span>
@@ -364,15 +357,15 @@ export default function CoursesPage() {
                                   </div>
                                   <div>
                                     <h4 className="text-sm font-semibold">Course Name</h4>
-                                    <p>{course.title}</p>
+                                    <p>{course.name}</p>
                                   </div>
                                   <div>
                                     <h4 className="text-sm font-semibold">University</h4>
-                                    <p>{course.university}</p>
+                                    <p>{course.university_name}</p>
                                   </div>
                                   <div>
                                     <h4 className="text-sm font-semibold">Qualification Status</h4>
-                                    {isQualified(course.points) ? (
+                                    {isQualified(course.minimum_grade) ? (
                                       <div className="flex items-center">
                                         <CheckCircle className="h-5 w-5 text-green-500 mr-1" />
                                         <span className="text-green-500">You meet the cluster weight requirements</span>
@@ -380,9 +373,7 @@ export default function CoursesPage() {
                                     ) : (
                                       <div className="flex items-center">
                                         <XCircle className="h-5 w-5 text-red-500 mr-1" />
-                                        <span className="text-red-500">
-                                          You do not meet the cluster weight requirements
-                                        </span>
+                                        <span className="text-red-500">You do not meet the cluster weight requirements</span>
                                       </div>
                                     )}
                                   </div>
@@ -410,7 +401,7 @@ export default function CoursesPage() {
                             </TableCell>
                           </TableRow>
                         )}
-                      </>
+                      </React.Fragment>
                     ))}
                   </TableBody>
                 </Table>
@@ -419,129 +410,7 @@ export default function CoursesPage() {
           </div>
         </section>
       </main>
-      <footer className="w-full border-t bg-gray-50 dark:bg-gray-900 py-6 md:py-12">
-        <div className="container px-4 md:px-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <GraduationCap className="h-6 w-6 text-emerald-600" />
-                <span className="text-lg font-bold">EduPathway</span>
-              </div>
-              <p className="text-sm text-gray-500">
-                Helping students find their perfect university courses based on their high school subjects and
-                interests.
-              </p>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-4">Quick Links</h3>
-              <ul className="space-y-2">
-                <li>
-                  <Link href="/" className="text-sm hover:text-emerald-600 transition-colors">
-                    Home
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/about" className="text-sm hover:text-emerald-600 transition-colors">
-                    About
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/courses" className="text-sm hover:text-emerald-600 transition-colors">
-                    Courses
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/contact" className="text-sm hover:text-emerald-600 transition-colors">
-                    Contact
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-4">Legal</h3>
-              <ul className="space-y-2">
-                <li>
-                  <Link href="#" className="text-sm hover:text-emerald-600 transition-colors">
-                    Terms of Service
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-sm hover:text-emerald-600 transition-colors">
-                    Privacy Policy
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-sm hover:text-emerald-600 transition-colors">
-                    Cookie Policy
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-4">Contact Us</h3>
-              <ul className="space-y-2">
-                <li className="flex items-center gap-2">
-                  <svg
-                    className="h-4 w-4 text-emerald-600"
-                    fill="none"
-                    height="24"
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    viewBox="0 0 24 24"
-                    width="24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                  </svg>
-                  <span className="text-sm">+254 712 345 678</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <svg
-                    className="h-4 w-4 text-emerald-600"
-                    fill="none"
-                    height="24"
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    viewBox="0 0 24 24"
-                    width="24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <rect height="16" rx="2" width="20" x="2" y="4" />
-                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                  </svg>
-                  <span className="text-sm">info@edupathway.co.ke</span>
-                </li>
-                <li className="flex gap-4 mt-4">
-                  <a href="#" className="text-gray-500 hover:text-emerald-600 transition-colors">
-                    <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616-.054 2.281 1.581 4.415 3.949 4.89-.693.188-1.452.232-2.224.084.626 1.956 2.444 3.379 4.6 3.419-2.07 1.623-4.678 2.348-7.29 2.04 2.179 1.397 4.768 2.212 7.548 2.212 9.142 0 14.307-7.721 13.995-14.646.962-.695 1.797-1.562 2.457-2.549z" />
-                    </svg>
-                  </a>
-                  <a href="#" className="text-gray-500 hover:text-emerald-600 transition-colors">
-                    <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
-                    </svg>
-                  </a>
-                  <a href="#" className="text-gray-500 hover:text-emerald-600 transition-colors">
-                    <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z" />
-                    </svg>
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </div>
-          <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-800 text-center">
-            <p className="text-sm text-gray-500">© 2023 EduPathway. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
-
-      {/* Authentication Modal for Existing Users */}
+      <Footer />
       {showAuthModal && <AuthenticationModal onClose={() => setShowAuthModal(false)} />}
     </div>
   )

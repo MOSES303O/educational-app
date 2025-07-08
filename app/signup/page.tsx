@@ -4,14 +4,16 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { GraduationCap, CheckCircle, AlertCircle } from "lucide-react"
+import { CheckCircle, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ThemeToggle } from "@/components/theme-toggle"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Header } from "@/components/header"
+import { Footer } from "@/components/footer"
+import { useAuth } from "@/lib/auth-context"
 
 export default function SignupPage() {
   const [phoneNumber, setPhoneNumber] = useState("")
@@ -21,6 +23,14 @@ export default function SignupPage() {
   const [errorMessage, setErrorMessage] = useState("")
   const [countdown, setCountdown] = useState(7)
   const router = useRouter()
+  const { user } = useAuth()
+
+  // Redirect if already logged in and paid
+  useEffect(() => {
+    if (user && user.hasPaid) {
+      router.push("/courses")
+    }
+  }, [user, router])
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     // Only allow numbers and format as needed
@@ -91,56 +101,8 @@ export default function SignupPage() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b bg-background">
-        <div className="container flex h-16 items-center justify-between py-4">
-          <div className="flex items-center gap-2">
-            <GraduationCap className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-xl font-bold">EduPathway</span>
-          </div>
-          <nav className="hidden md:flex items-center gap-6">
-            <Link
-              href="/"
-              className="text-sm font-medium hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              Home
-            </Link>
-            <Link
-              href="/about"
-              className="text-sm font-medium hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              About
-            </Link>
-            <Link
-              href="/courses"
-              className="text-sm font-medium hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              Courses
-            </Link>
-            <Link
-              href="/contact"
-              className="text-sm font-medium hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              Contact
-            </Link>
-          </nav>
-          <div className="flex items-center gap-4">
-            <ThemeToggle />
-            <Link
-              href="/signup"
-              className="text-sm font-medium text-emerald-600 dark:text-emerald-400 transition-colors hidden md:block"
-            >
-              Sign In
-            </Link>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-              asChild
-            >
-              <Link href="/signup">Get Started</Link>
-            </Button>
-          </div>
-        </div>
-      </header>
-      <main className="flex-1 flex items-center justify-center bg-gradient-to-b from-white to-gray-50 dark:from-gray-950 dark:to-gray-900 p-4">
+      <Header />
+      <main className="flex-1 flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl font-bold">Sign up for EduPathway</CardTitle>
@@ -218,7 +180,7 @@ export default function SignupPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between p-4 border rounded-md bg-muted/50">
                     <div>
-                      <p className="font-medium">EduPathway Premium</p>
+                      <p className="font-medium">EduHub Premium</p>
                       <p className="text-sm text-gray-500">One-time payment</p>
                     </div>
                     <div className="text-right">
@@ -245,7 +207,7 @@ export default function SignupPage() {
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
             <div className="text-center text-sm text-gray-500">
-              By signing up, you agree to our{" "}
+              By initiating PAY, you agree to our{" "}
               <Link href="#" className="text-emerald-600 hover:underline">
                 Terms of Service
               </Link>{" "}
@@ -255,33 +217,15 @@ export default function SignupPage() {
               </Link>
             </div>
             <div className="text-center text-sm">
-              Already have an account?{" "}
+              Have Not Paid?{" "}
               <Link href="#" className="text-emerald-600 hover:underline">
-                Sign in
+                PAY NOW
               </Link>
             </div>
           </CardFooter>
         </Card>
       </main>
-      <footer className="w-full border-t bg-gray-50 dark:bg-gray-900 py-6">
-        <div className="container px-4 md:px-6 text-center">
-          <p className="text-sm text-gray-500">© 2023 EduPathway. All rights reserved.</p>
-          <div className="flex justify-center gap-4 mt-4">
-            <Link href="/about" className="text-sm text-gray-500 hover:text-emerald-600 transition-colors">
-              About
-            </Link>
-            <Link href="/contact" className="text-sm text-gray-500 hover:text-emerald-600 transition-colors">
-              Contact
-            </Link>
-            <Link href="#" className="text-sm text-gray-500 hover:text-emerald-600 transition-colors">
-              Privacy
-            </Link>
-            <Link href="#" className="text-sm text-gray-500 hover:text-emerald-600 transition-colors">
-              Terms
-            </Link>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   )
 }

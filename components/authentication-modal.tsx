@@ -58,30 +58,9 @@ export function AuthenticationModal({ onClose }: AuthenticationModalProps) {
         setCountdown(countdown - 1)
       }, 1000)
     } else if (stkPushSent && countdown === 0) {
-      // Retrieve stored subject data if available
-      const storedSubjects = localStorage.getItem("eduPathwaySubjects")
-      let totalPoints = 30 // Default points if no subjects found
-      let subjectParams = ""
-
-      if (storedSubjects) {
-        const subjectData = JSON.parse(storedSubjects)
-        totalPoints = subjectData.totalPoints || totalPoints
-
-        // Create subject parameters for URL
-        if (subjectData.subjects && Array.isArray(subjectData.subjects)) {
-          subjectParams = subjectData.subjects
-            .map((s: any) => `subjects=${encodeURIComponent(`${s.name}:${s.grade}`)}`)
-            .join("&")
-        }
-      }
-
-      // Update user record to indicate payment
-      const userRecord = JSON.parse(localStorage.getItem("eduPathwayUser") || "{}")
-      userRecord.hasPaid = true
-      localStorage.setItem("eduPathwayUser", JSON.stringify(userRecord))
-
-      // Redirect to courses page with the calculated points
-      router.push(`/courses?points=${totalPoints}&${subjectParams}`)
+      // Skip cluster calculation to avoid errors
+      // Just navigate to courses page directly
+      router.push("/courses")
     }
 
     return () => {
@@ -91,9 +70,9 @@ export function AuthenticationModal({ onClose }: AuthenticationModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md bg-[#1a2521]">
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center  justify-between">
             <CardTitle className="text-2xl">Welcome Back</CardTitle>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="h-5 w-5" />
@@ -156,7 +135,7 @@ export function AuthenticationModal({ onClose }: AuthenticationModalProps) {
               Cancel
             </Button>
             {!stkPushSent && (
-              <Button type="submit" disabled={isSubmitting}>
+              <Button variant="outline" type="submit" disabled={isSubmitting}>
                 {isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
