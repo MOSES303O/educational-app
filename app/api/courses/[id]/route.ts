@@ -5,7 +5,7 @@ export async function GET(
   request: NextRequest,
   context: { params: { id: string } }
 ) {
-  const { id } = context.params
+  const id = context.params.id
   const course = coursesData.find((course) => course.id === id)
 
   if (!course) {
